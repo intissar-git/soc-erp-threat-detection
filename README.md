@@ -1,4 +1,4 @@
-# SOC pour la Détection et la Réponse aux Menaces sur les ERP (Prototype)
+# SOC pour la Détection et la Réponse aux Menaces sur les ERP 
 
 ## 📌 Contexte
 Ce projet a été réalisé dans le cadre d'un Projet de Fin d'Études (PFE) au sein de **GM-Soft** (Béni Mellal, Maroc), en collaboration avec l'**École Supérieure de Technologie de Béni Mellal (ESTBM)**.
