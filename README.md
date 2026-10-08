@@ -59,10 +59,10 @@ En raison de contraintes de ressources, le prototype a été déployé sur **une
 - **MTTD < 3s et MTTR < 5s** (Mesuré sur le prototype).
 
 ## 📂 Contenu du dépôt
-- `docs/` : Rapport PFE (version publique nettoyée), guide de déploiement, schémas.
-- `scripts/` : Scripts Python génériques (MISP-to-Wazuh, OpenSearch Anomaly, LLM Report).
-- `config/` : Règles Wazuh XML, workflow Shuffle (JSON).
-- `docker/` : Fichier `docker-compose.yml` simplifié pour le POC.
+- `Docs/` : Rapport PFE (version publique nettoyée), guide de déploiement, schémas.
+- `Scripts/` : Scripts Python génériques (MISP-to-Wazuh, OpenSearch Anomaly, LLM Report).
+- `Config/` : Règles Wazuh XML, workflow Shuffle (JSON).
+- `Docker/` : Fichier `docker-compose.yml` simplifié pour le POC.
 
 ## 🙏 Remerciements
 En reconnaissance des communautés open source et de leur contribution à la concrétisation de ce projet, nous avons décidé de rendre publiques notre documentation ainsi que les étapes suivies pour le réaliser. Nous remercions particulièrement les équipes de Wazuh, Elastic, Shuffle, TheHive, Cortex, MISP et OpenSearch.
