@@ -25,7 +25,7 @@ Concevoir et déployer un prototype de Security Operations Center (SOC) capable 
 
 ## 🏗️ Architecture
 <p align="center">
-  <a href="Docs/details.md">
+  <a href="flux-donnees.md">
     <img src="Docs/Soc_Architecture.jpg" alt="Architecture SOC — cliquez pour voir le flux de données" width="600">
   </a>
   <br>
