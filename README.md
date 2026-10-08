@@ -56,7 +56,3 @@ En raison de contraintes de ressources, le prototype a été déployé sur **une
 
 ## 🙏 Remerciements
 En reconnaissance des communautés open source et de leur contribution à la concrétisation de ce projet, nous avons décidé de rendre publiques notre documentation ainsi que les étapes suivies pour le réaliser. Nous remercions particulièrement les équipes de Wazuh, Elastic, Shuffle, TheHive, Cortex, MISP et OpenSearch.
-
-## 📜 Licence
-Ce projet est sous licence **Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)**. 
-Vous êtes libre de partager ce contenu, mais vous ne pouvez pas l'utiliser à des fins commerciales ni le modifier sans autorisation.
