@@ -35,7 +35,6 @@ Concevoir et déployer un prototype de Security Operations Center (SOC) capable 
 </p>
 
 L'architecture repose sur une approche **Defense-in-Depth** :
-...
 1. **Périmètre (Cloud Azure) :** Le filtrage et le blocage des IP malveillantes sont assurés par le **pare-feu natif Microsoft Azure (Network Security Group / Azure Firewall)**. Il n'y a pas d'IDS/IPS local (type Snort/Suricata) dans cette version.
 2. **Collecte & Analyse (SIEM) :** Wazuh Manager, Indexer et Dashboard.
 3. **Stockage & Rétention :** Stack ELK (Elasticsearch, Logstash, Kibana).
