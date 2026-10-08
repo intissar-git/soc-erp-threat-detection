@@ -24,6 +24,13 @@ Concevoir et déployer un prototype de Security Operations Center (SOC) capable 
 - Générer des rapports d'analyse via un LLM (Groq API / LLaMA 3.3).
 
 ## 🏗️ Architecture
+<p align="center">
+  <a href="Docs/details.md">
+    <img src="Docs/Soc_Architecture.jpg" alt="Architecture SOC" width="600">
+  </a>
+  <br>
+  <em>Figure 1 — Architecture du système de détection</em>
+</p>
 L'architecture repose sur une approche **Defense-in-Depth** :
 1. **Périmètre (Cloud Azure) :** Le filtrage et le blocage des IP malveillantes sont assurés par le **pare-feu natif Microsoft Azure (Network Security Group / Azure Firewall)**. Il n'y a pas d'IDS/IPS local (type Snort/Suricata) dans cette version.
 2. **Collecte & Analyse (SIEM) :** Wazuh Manager, Indexer et Dashboard.
