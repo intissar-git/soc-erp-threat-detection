@@ -62,9 +62,7 @@ En raison de contraintes de ressources, le prototype a été déployé sur **une
 
 ```text
 soc-erp-threat-detection/
-├── README.md                    # Ce fichier
-├── LICENSE                      # Licence CC BY-NC-ND 4.0
-├── .gitignore                   # Fichiers exclus du versioning
+├── README.md                    # fichier de documentation 
 ├── .env.example                 # Modèle de configuration (à copier vers .env)
 │
 ├── Docs/                        # Documentation
