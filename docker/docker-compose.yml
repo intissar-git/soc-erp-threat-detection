@@ -1,0 +1,404 @@
+# ============================================================================
+# SOC ERP Odoo - Stack Docker complète
+# ----------------------------------------------------------------------------
+
+version: '3.8'
+
+# ----------------------------------------------------------------------------
+# Réseaux
+# ----------------------------------------------------------------------------
+networks:
+  soc-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+# ----------------------------------------------------------------------------
+# Volumes persistants
+# ----------------------------------------------------------------------------
+volumes:
+  wazuh-indexer-data:
+  wazuh-manager-data:
+  opensearch-anomaly-data:
+  shuffle-data:
+  misp-data:
+  misp-mysql:
+  misp-redis:
+  thehive-data:
+  cassandra-data:
+  cortex-data:
+  elastic-data:
+  logstash-data:
+  kibana-data:
+
+# ----------------------------------------------------------------------------
+# Services
+# ----------------------------------------------------------------------------
+services:
+
+  # ==========================================================================
+  # 1. WAZUH INDEXER (base de données OpenSearch dédiée à Wazuh)
+  # ==========================================================================
+  wazuh.indexer:
+    image: wazuh/wazuh-indexer:4.7.0
+    container_name: wazuh.indexer
+    hostname: wazuh.indexer
+    restart: unless-stopped
+    networks:
+      - soc-net
+    ports:
+      - "9200:9200"
+    environment:
+      - "OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g"
+      - "DISABLE_INSTALL_DEMO_CONFIG=true"
+      - "DISABLE_SECURITY_PLUGIN=true"
+    volumes:
+      - wazuh-indexer-data:/var/lib/wazuh-indexer
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+
+  # ==========================================================================
+  # 2. WAZUH MANAGER (SIEM : collecte, corrélation, alerting)
+  # ==========================================================================
+  wazuh.manager:
+    image: wazuh/wazuh-manager:4.7.0
+    container_name: wazuh.manager
+    hostname: wazuh.manager
+    restart: unless-stopped
+    networks:
+      - soc-net
+    ports:
+      - "1514:1514"
+      - "1515:1515"
+      - "55000:55000"
+    environment:
+      - INDEXER_URL=https://wazuh.indexer:9200
+      - INDEXER_USERNAME=admin
+      - INDEXER_PASSWORD=${INDEXER_PASSWORD}
+      - FILEBEAT_SSL_VERIFICATION_MODE=none
+    volumes:
+      - wazuh-manager-data:/var/ossec/data
+      - ./config/wazuh_rules.xml:/var/ossec/etc/rules/local_rules.xml:ro
+      - ./config/wazuh_decoders.xml:/var/ossec/etc/decoders/local_decoder.xml:ro
+      - ./config/ossec_agent_odoo.conf:/var/ossec/etc/shared/agent.conf:ro
+    depends_on:
+      - wazuh.indexer
+
+  # ==========================================================================
+  # 3. WAZUH DASHBOARD (interface web SIEM)
+  # ==========================================================================
+  wazuh.dashboard:
+    image: wazuh/wazuh-dashboard:4.7.0
+    container_name: wazuh.dashboard
+    hostname: wazuh.dashboard
+    restart: unless-stopped
+    networks:
+      - soc-net
+    ports:
+      - "443:5601"
+    environment:
+      - INDEXER_URL=https://wazuh.indexer:9200
+      - INDEXER_USERNAME=admin
+      - INDEXER_PASSWORD=${INDEXER_PASSWORD}
+      - WAZUH_API_URL=https://wazuh.manager
+      - API_USERNAME=wazuh-wui
+      - API_PASSWORD=${WAZUH_API_PASSWORD}
+      - DASHBOARD_USERNAME=kibanaserver
+      - DASHBOARD_PASSWORD=${INDEXER_PASSWORD}
+    depends_on:
+      - wazuh.indexer
+      - wazuh.manager
+
+  # ==========================================================================
+  # 4. OPENSEARCH ANOMALY DETECTION (module ML natif de l'indexer Wazuh)
+  # ==========================================================================
+  # Le plugin est inclus dans wazuh.indexer.
+  # Ce conteneur auxiliaire exécute le script de configuration du détecteur.
+  opensearch-anomaly-config:
+    image: python:3.11-slim
+    container_name: opensearch-anomaly-config
+    hostname: opensearch-anomaly
+    restart: "no"
+    networks:
+      - soc-net
+    environment:
+      - ES_URL=https://wazuh.indexer:9200
+      - ES_USER=admin
+      - ES_PASS=${INDEXER_PASSWORD}
+      - DETECTOR_ID=${DETECTOR_ID}
+    volumes:
+      - ./scripts/opensearch_anomaly.py:/app/opensearch_anomaly.py:ro
+      - opensearch-anomaly-data:/app/data
+    command: >
+      sh -c "pip install --quiet requests python-dotenv urllib3 &&
+             sleep 60 &&
+             python /app/opensearch_anomaly.py"
+    depends_on:
+      - wazuh.indexer
+
+  # ==========================================================================
+  # 5. SHUFFLE BACKEND (SOAR : orchestration des playbooks)
+  # ==========================================================================
+  shuffle.backend:
+    image: ghcr.io/shuffle/shuffle-backend:latest
+    container_name: shuffle.backend
+    hostname: shuffle-backend
+    restart: unless-stopped
+    networks:
+      - soc-net
+    ports:
+      - "5001:5001"
+    environment:
+      - SHUFFLE_OPENSEARCH_URL=https://wazuh.indexer:9200
+      - SHUFFLE_OPENSEARCH_USERNAME=admin
+      - SHUFFLE_OPENSEARCH_PASSWORD=${INDEXER_PASSWORD}
+      - SHUFFLE_OPENSEARCH_SKIPSSL=true
+      - SHUFFLE_DEFAULT_USERNAME=admin
+      - SHUFFLE_DEFAULT_PASSWORD=${SHUFFLE_PASSWORD}
+      - SHUFFLE_DEFAULT_APIKEY=${SHUFFLE_APIKEY}
+      - ORG_ID=default
+      - ENVIRONMENT_NAME=SOC-ERP
+      - SHUFFLE_PASS_WORKER_PROXY=true
+    volumes:
+      - shuffle-data:/app/backend/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - wazuh.indexer
+
+  # ==========================================================================
+  # 6. SHUFFLE FRONTEND (interface web SOAR)
+  # ==========================================================================
+  shuffle.frontend:
+    image: ghcr.io/shuffle/shuffle-frontend:latest
+    container_name: shuffle.frontend
+    hostname: shuffle-frontend
+    restart: unless-stopped
+    networks:
+      - soc-net
+    ports:
+      - "3001:3001"
+    environment:
+      - BACKEND_HOSTNAME=shuffle.backend
+      - SHUFFLE_SERVER_URL=http://shuffle.backend:5001
+    depends_on:
+      - shuffle.backend
+
+  # ==========================================================================
+  # 7. MISP (Threat Intelligence : IoCs)
+  # ==========================================================================
+  misp:
+    image: coolacid/misp-docker:core-latest
+    container_name: misp
+    hostname: misp
+    restart: unless-stopped
+    networks:
+      - soc-net
+    ports:
+      - "8080:80"
+    environment:
+      - MYSQL_HOST=misp-db
+      - MYSQL_DATABASE=misp
+      - MYSQL_USER=misp
+      - MYSQL_PASSWORD=${MISP_DB_PASSWORD}
+      - MISP_ADMIN_EMAIL=${MISP_ADMIN_EMAIL}
+      - MISP_ADMIN_PASSPHRASE=${MISP_ADMIN_PASSPHRASE}
+      - MISP_BASEURL=http://misp
+      - REDIS_FQDN=misp-redis
+      - INIT=true
+    volumes:
+      - misp-data:/var/www/MISP
+    depends_on:
+      - misp-db
+      - misp-redis
+
+  misp-db:
+    image: mysql:8.0
+    container_name: misp-db
+    hostname: misp-db
+    restart: unless-stopped
+    networks:
+      - soc-net
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MISP_DB_ROOT_PASSWORD}
+      - MYSQL_DATABASE=misp
+      - MYSQL_USER=misp
+      - MYSQL_PASSWORD=${MISP_DB_PASSWORD}
+    volumes:
+      - misp-mysql:/var/lib/mysql
+
+  misp-redis:
+    image: redis:7-alpine
+    container_name: misp-redis
+    hostname: misp-redis
+    restart: unless-stopped
+    networks:
+      - soc-net
+    volumes:
+      - misp-redis:/data
+
+  # ==========================================================================
+  # 8. TH EHIVE (gestion des incidents / case management)
+  # ==========================================================================
+  thehive:
+    image: strangebee/thehive:5.2
+    container_name: thehive
+    hostname: thehive
+    restart: unless-stopped
+    networks:
+      - soc-net
+    ports:
+      - "9000:9000"
+    environment:
+      - JVM_OPTS=-Xms512m -Xmx1024m
+    volumes:
+      - thehive-data:/opt/thp/thehive/data
+      - ./config/thehive_application.conf:/etc/thehive/application.conf:ro
+    depends_on:
+      - cassandra
+      - elasticsearch
+
+  # ==========================================================================
+  # 9. CORTEX (enrichissement des observables)
+  # ==========================================================================
+  cortex:
+    image: thehiveproject/cortex:3.1.8
+    container_name: cortex
+    hostname: cortex
+    restart: unless-stopped
+    networks:
+      - soc-net
+    ports:
+      - "9001:9001"
+    environment:
+      - JVM_OPTS=-Xms512m -Xmx1024m
+    volumes:
+      - cortex-data:/opt/cortex/data
+      - ./config/cortex_application.conf:/etc/cortex/application.conf:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - elasticsearch
+
+  # ==========================================================================
+  # 10. CASSANDRA (base de données de TheHive)
+  # ==========================================================================
+  cassandra:
+    image: cassandra:4.1
+    container_name: cassandra
+    hostname: cassandra
+    restart: unless-stopped
+    networks:
+      - soc-net
+    environment:
+      - CASSANDRA_CLUSTER_NAME=thp
+      - HEAP_NEWSIZE=100M
+      - MAX_HEAP_SIZE=512M
+    volumes:
+      - cassandra-data:/var/lib/cassandra
+
+  # ==========================================================================
+  # 11. ELASTICSEARCH (stack ELK secondaire : TheHive + Cortex + forensic)
+  # ==========================================================================
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.10
+    container_name: elasticsearch
+    hostname: elasticsearch
+    restart: unless-stopped
+    networks:
+      - soc-net
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
+      - xpack.security.enabled=false
+      - bootstrap.memory_lock=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - "9201:9200"
+    volumes:
+      - elastic-data:/usr/share/elasticsearch/data
+      - ./config/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
+
+  # ==========================================================================
+  # 12. LOGSTASH (pipeline de collecte pour la stack ELK secondaire)
+  # ==========================================================================
+  logstash:
+    image: docker.elastic.co/logstash/logstash:7.17.10
+    container_name: logstash
+    hostname: logstash
+    restart: unless-stopped
+    networks:
+      - soc-net
+    ports:
+      - "5044:5044"
+      - "5140:5140/udp"
+    environment:
+      - "LS_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - logstash-data:/usr/share/logstash/data
+      - ./config/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+    depends_on:
+      - elasticsearch
+
+  # ==========================================================================
+  # 13. KIBANA (visualisation stack ELK secondaire)
+  # ==========================================================================
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.17.10
+    container_name: kibana
+    hostname: kibana
+    restart: unless-stopped
+    networks:
+      - soc-net
+    ports:
+      - "5602:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - SERVER_NAME=soc-kibana
+    volumes:
+      - kibana-data:/usr/share/kibana/data
+      - ./config/kibana.yml:/usr/share/kibana/config/kibana.yml:ro
+    depends_on:
+      - elasticsearch
+
+  # ==========================================================================
+  # 14. SOC LLM REPORT GENERATOR (génération quotidienne de rapports)
+  # ==========================================================================
+  soc-llm-report:
+    image: python:3.11-slim
+    container_name: soc-llm-report
+    hostname: soc-llm-report
+    restart: unless-stopped
+    networks:
+      - soc-net
+    environment:
+      - ES_URL=https://wazuh.indexer:9200
+      - ES_USER=admin
+      - ES_PASS=${INDEXER_PASSWORD}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_MODEL=${GROQ_MODEL}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - EMAIL_TO=${EMAIL_TO}
+      - ORG_NAME=${ORG_NAME}
+    volumes:
+      - ./scripts/llm_report_generator.py:/app/llm_report_generator.py:ro
+      - ./reports:/app/reports
+      - ./logs:/app/logs
+    command: >
+      sh -c "pip install --quiet requests groq python-dotenv matplotlib numpy markdown2 weasyprint &&
+             while true; do
+               python /app/llm_report_generator.py || true;
+               sleep 86400;
+             done"
+    depends_on:
+      - wazuh.indexer
