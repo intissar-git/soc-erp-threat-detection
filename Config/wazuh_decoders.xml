@@ -1,0 +1,212 @@
+<!--
+  ============================================================================
+  Décodeurs Wazuh personnalisés - SOC ERP Odoo
+  ============================================================================
+  Sources de logs couvertes :
+    - Logs applicatifs Odoo (odoo-server.log)
+    - Logs web nginx (access.log, error.log)
+    - Logs système (auth.log pour SSH)
+    - Logs Azure NSG Flow (récupérés via le module azure-logs du manager)
+
+  Emplacement cible : /var/ossec/etc/decoders/local_decoder.xml
+  ============================================================================
+-->
+
+<decoder_list>
+
+  <!-- ======================================================================
+       BLOC 1 : LOGS APPLICATIFS ODOO
+       ====================================================================== -->
+
+  <!--
+    Échec d'authentification Odoo détecté par werkzeug.
+    Exemple :
+      2026-06-16 08:31:22,145 12345 ERROR odoo.http werkzeug: 20.203.151.95 - - "POST /web/login HTTP/1.1" 400 -
+  -->
+  <decoder name="odoo-login-failure">
+    <prematch>ERROR \S+ werkzeug:</prematch>
+    <regex offset="after_prematch">(\d+\.\d+\.\d+\.\d+).*POST /web/login</regex>
+    <order>srcip</order>
+  </decoder>
+
+  <!--
+    Échec d'authentification Odoo - variante login_password.
+    Exemple :
+      2026-06-16 08:31:22,145 12345 INFO odoo.addons.web.controllers.home Login failed for db:odoo login:admin from 20.203.151.95
+  -->
+  <decoder name="odoo-login-failed-home">
+    <prematch>Login failed for db:</prematch>
+    <regex offset="after_prematch">db:(\S+) login:(\S+) from (\d+\.\d+\.\d+\.\d+)</regex>
+    <order>db,user,srcip</order>
+  </decoder>
+
+  <!--
+    Accès web Odoo complet (méthode, URL, statut HTTP, IP source).
+    Exemple :
+      20.203.151.95 - - [16/Jun/2026:08:31:22 +0000] "POST /web/login HTTP/1.1" 400 -
+  -->
+  <decoder name="odoo-access-log">
+    <program_name>odoo-server</program_name>
+    <regex>^(\d+\.\d+\.\d+\.\d+) - - \[\S+ \S+\] "(\w+) (\S+) HTTP/\d\.\d" (\d+)</regex>
+    <order>srcip,method,url,status</order>
+  </decoder>
+
+  <!--
+    Erreur applicative Odoo (traces Python, exceptions).
+  -->
+  <decoder name="odoo-error">
+    <prematch>ERROR \S+ odoo\.</prematch>
+    <regex offset="after_prematch">(\S+): (.+)</regex>
+    <order>module,error_message</order>
+  </decoder>
+
+  <!-- ======================================================================
+       BLOC 2 : LOGS WEB NGINX (FRONTAL ODOO)
+       ====================================================================== -->
+
+  <!--
+    Accès nginx standard (combiné).
+    Exemple :
+      20.203.151.95 - - [16/Jun/2026:08:31:22 +0000] "GET /web/login HTTP/1.1" 200 1234 "-" "Mozilla/5.0"
+  -->
+  <decoder name="nginx-access">
+    <prematch>^\d+\.\d+\.\d+\.\d+ - - \[</prematch>
+    <regex>^(\d+\.\d+\.\d+\.\d+) - - \[\S+ \S+\] "(\w+) (\S+) HTTP/\d\.\d" (\d+) (\d+) "(\S+)" "(\S+)"</regex>
+    <order>srcip,method,url,status,bytes,referer,user_agent</order>
+  </decoder>
+
+  <!--
+    Détection spécifique d'une tentative de path traversal dans l'URL.
+  -->
+  <decoder name="nginx-path-traversal">
+    <prematch>\.\./|%2e%2e|\.\.%2f|%2e%2e%2f</prematch>
+    <regex>^(\d+\.\d+\.\d+\.\d+).*"(\w+) (\S+)" (\d+)</regex>
+    <order>srcip,method,url,status</order>
+  </decoder>
+
+  <!-- ======================================================================
+       BLOC 3 : LOGS SYSTÈME (SSH / AUTH)
+       ====================================================================== -->
+
+  <!--
+    Échec d'authentification SSH (déjà géré nativement par Wazuh via la règle 5710,
+    mais on ajoute un décodeur pour extraire user + srcip de manière unifiée).
+    Exemple :
+      Jun 16 08:31:22 target-vm sshd[1234]: Failed password for invalid user admin from 20.203.151.95 port 51234 ssh2
+  -->
+  <decoder name="ssh-failed-password">
+    <prematch>sshd.*Failed password for</prematch>
+    <regex>Failed password for (?:invalid user )?(\S+) from (\d+\.\d+\.\d+\.\d+) port (\d+)</regex>
+    <order>user,srcip,srcport</order>
+  </decoder>
+
+  <!--
+    Utilisateur SSH invalide (compte inexistant).
+  -->
+  <decoder name="ssh-invalid-user">
+    <prematch>sshd.*Invalid user</prematch>
+    <regex>Invalid user (\S+) from (\d+\.\d+\.\d+\.\d+)</regex>
+    <order>user,srcip</order>
+  </decoder>
+
+  <!--
+    Authentification SSH réussie.
+  -->
+  <decoder name="ssh-accepted">
+    <prematch>sshd.*Accepted</prematch>
+    <regex>Accepted \S+ for (\S+) from (\d+\.\d+\.\d+\.\d+) port (\d+)</regex>
+    <order>user,srcip,srcport</order>
+  </decoder>
+
+  <!-- ======================================================================
+       BLOC 4 : LOGS AZURE NSG (NETWORK SECURITY GROUP)
+       ======================================================================
+       Ces logs sont récupérés par le module azure-logs du manager Wazuh
+       via l'API Azure Monitor. Ils arrivent en JSON.
+       ====================================================================== -->
+
+  <!--
+    Événement de flux NSG (format JSON).
+    Exemple partiel :
+      {"category":"NetworkSecurityGroupFlowEvent","src_ip":"20.203.151.95","dst_port":22,"action":"Deny"}
+  -->
+  <decoder name="azure-nsg-flow">
+    <prematch>"category":"NetworkSecurityGroupFlowEvent"</prematch>
+    <regex>"src_ip":"(\S+?)".*"dst_ip":"(\S+?)".*"dst_port":(\d+).*"action":"(\w+)"</regex>
+    <order>srcip,dstip,dstport,action</order>
+  </decoder>
+
+  <!--
+    Connexion refusée par le NSG (Deny).
+  -->
+  <decoder name="azure-nsg-denied">
+    <prematch>"action":"Deny"</prematch>
+    <regex>"src_ip":"(\S+?)".*"dst_ip":"(\S+?)".*"dst_port":(\d+)</regex>
+    <order>srcip,dstip,dstport</order>
+  </decoder>
+
+  <!--
+    Connexion autorisée par le NSG (Allow) - utile pour la baseline.
+  -->
+  <decoder name="azure-nsg-allowed">
+    <prematch>"action":"Allow"</prematch>
+    <regex>"src_ip":"(\S+?)".*"dst_ip":"(\S+?)".*"dst_port":(\d+)</regex>
+    <order>srcip,dstip,dstport</order>
+  </decoder>
+
+  <!--
+    Règle NSG appliquée (nom de la règle).
+  -->
+  <decoder name="azure-nsg-rule">
+    <prematch>"ruleName":</prematch>
+    <regex>"ruleName":"(\S+?)"</regex>
+    <order>nsg_rule</order>
+  </decoder>
+
+  <!-- ======================================================================
+       BLOC 5 : LOGS CLOUD AZURE (ACTIVITY LOGS)
+       ======================================================================
+       Récupérés via azure-logs pour surveiller les modifications de NSG.
+       ====================================================================== -->
+
+  <!--
+    Modification d'une règle NSG (création, mise à jour, suppression).
+  -->
+  <decoder name="azure-nsg-rule-change">
+    <prematch>Microsoft.Network/networkSecurityGroups/securityRules/write</prematch>
+    <regex>"caller":"(\S+?)".*"resourceId":"(\S+?)"</regex>
+    <order>caller,resource_id</order>
+  </decoder>
+
+  <!--
+    Attribution de rôle Azure (escalade de privilèges potentielle).
+  -->
+  <decoder name="azure-role-assignment">
+    <prematch>Microsoft.Authorization/roleAssignments/write</prematch>
+    <regex>"caller":"(\S+?)".*"scope":"(\S+?)"</regex>
+    <order>caller,scope</order>
+  </decoder>
+
+  <!-- ======================================================================
+       BLOC 6 : LOGS DOCKER (POUR LES CONTENEURS SOC)
+       ======================================================================
+          
+  <!--
+    Message d'erreur Docker.
+  -->
+  <decoder name="docker-error">
+    <prematch>level=error</prematch>
+    <regex>msg="([^"]+)"</regex>
+    <order>docker_message</order>
+  </decoder>
+
+  <!--
+    Démarrage d'un conteneur Docker.
+  -->
+  <decoder name="docker-container-start">
+    <prematch>container start</prematch>
+    <regex>container start (\S+)</regex>
+    <order>container_name</order>
+  </decoder>
+
+</decoder_list>

@@ -1,0 +1,37 @@
+# =========================================================
+# Kibana 7.17.10 - Visualisation de la stack ELK secondaire
+# =========================================================
+
+server.name: soc-kibana
+server.host: "0.0.0.0"
+server.port: 5601
+
+# ---------------------------------------------------------
+# Connexion à Elasticsearch (instance secondaire)
+# ---------------------------------------------------------
+elasticsearch.hosts: ["http://elasticsearch:9200"]
+
+# ---------------------------------------------------------
+# Sécurité désactivée (POC interne)
+# ---------------------------------------------------------
+xpack.security.enabled: false
+xpack.encryptedSavedObjects.encryptionKey: "your key of 32_CHARACTERS_MINIMUM_KEY"
+
+# ---------------------------------------------------------
+# Index par défaut
+# ---------------------------------------------------------
+kibana.defaultAppId: "discover"
+
+# ---------------------------------------------------------
+# Logs
+# ---------------------------------------------------------
+logging.root.level: warn
+logging.appenders.default:
+  type: console
+  layout:
+    type: json
+
+# ---------------------------------------------------------
+# Monitoring
+# ---------------------------------------------------------
+monitoring.ui.container.elasticsearch.enabled: true

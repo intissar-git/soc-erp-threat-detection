@@ -1,0 +1,75 @@
+{
+  "name": "SOC - Wazuh Alert Handling",
+  "description": "Chaîne d'orchestration automatique pour les alertes Wazuh critiques",
+  "triggers": [
+    {
+      "type": "webhook",
+      "name": "wazuh_alert",
+      "parameters": {
+        "auth": "shared_secret",
+        "method": "POST"
+      }
+    }
+  ],
+  "actions": [
+    {
+      "name": "parse_wazuh_alert",
+      "app": "tools",
+      "action": "repeat_back_to_me",
+      "parameters": {
+        "note": "Extract src_ip, rule_id, level from payload"
+      }
+    },
+    {
+      "name": "virustotal_lookup",
+      "app": "virustotal",
+      "action": "get_ip_report",
+      "parameters": {
+        "apikey": "{{VirusTotal_API_Key}}",
+        "ip": "{{parse_wazuh_alert.srcip}}"
+      }
+    },
+    {
+      "name": "condition_malicious",
+      "app": "conditions",
+      "action": "if_condition",
+      "parameters": {
+        "condition": "{{virustotal_lookup.positives}} >= 3"
+      }
+    },
+    {
+      "name": "block_ip_azure_nsg",
+      "app": "http",
+      "action": "post",
+      "parameters": {
+        "url": "https://management.azure.com/subscriptions/{{AZURE_SUB_ID}}/resourceGroups/{{AZURE_RG}}/providers/Microsoft.Network/networkSecurityGroups/nsg-soc/securityRules/block-{{parse_wazuh_alert.srcip}}?api-version=2023-09-01",
+        "headers": {
+          "Authorization": "Bearer {{AZURE_TOKEN}}",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "properties": {
+            "priority": 200,
+            "direction": "Inbound",
+            "access": "Deny",
+            "protocol": "*",
+            "sourceAddressPrefix": "{{parse_wazuh_alert.srcip}}",
+            "destinationAddressPrefix": "*",
+            "sourcePortRange": "*",
+            "destinationPortRange": "*"
+          }
+        }
+      }
+    },
+    {
+      "name": "notify_soc",
+      "app": "email",
+      "action": "send_email",
+      "parameters": {
+        "to": "{{EMAIL_TO}}",
+        "subject": "[SOC] Alerte {{parse_wazuh_alert.rule_id}} - IP bloquée",
+        "body": "IP {{parse_wazuh_alert.srcip}} bloquée suite à {{virustotal_lookup.positives}} détections VirusTotal."
+      }
+    }
+  ]
+}

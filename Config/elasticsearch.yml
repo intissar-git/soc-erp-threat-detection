@@ -1,0 +1,51 @@
+# =========================================================
+# Elasticsearch 7.17.10 - Index secondaire pour TheHive + Cortex
+# NE PAS CONFONDRE avec l'indexer Wazuh (OpenSearch)
+# Cette instance sert uniquement :
+#   - au stockage des cas TheHive
+#   - au stockage des jobs Cortex
+#   - à la rétention forensic long terme (logs non-Wazuh)
+# =========================================================
+
+cluster.name: soc-secondary-cluster
+node.name: ${HOSTNAME}
+
+# ---------------------------------------------------------
+# Réseau
+# ---------------------------------------------------------
+network.host: 0.0.0.0
+http.port: 9200
+transport.port: 9300
+
+# ---------------------------------------------------------
+# Découverte (single-node pour POC)
+# ---------------------------------------------------------
+discovery.type: single-node
+
+# ---------------------------------------------------------
+# Sécurité désactivée (POC interne uniquement - à activer en prod)
+# ---------------------------------------------------------
+xpack.security.enabled: false
+xpack.security.transport.ssl.enabled: false
+
+# ---------------------------------------------------------
+# Mémoire (adapté à la VM 16 Go - plafonné via ES_JAVA_OPTS)
+# ---------------------------------------------------------
+bootstrap.memory_lock: true
+
+# ---------------------------------------------------------
+# Stockage
+# ---------------------------------------------------------
+path.data: /usr/share/elasticsearch/data
+path.logs: /usr/share/elasticsearch/logs
+
+# ---------------------------------------------------------
+# Performance
+# ---------------------------------------------------------
+indices.query.bool.max_clause_count: 4096
+thread_pool.write.queue_size: 1000
+
+# ---------------------------------------------------------
+# Rétention (les ILM policies sont définies côté Kibana)
+# ---------------------------------------------------------
+action.destructive_requires_name: true

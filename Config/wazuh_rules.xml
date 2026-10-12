@@ -1,0 +1,158 @@
+<!--
+  Règles Wazuh personnalisées pour la détection d'attaques ciblant
+  une application ERP de type Odoo, déployée derrière Azure NSG.
+
+  IMPORTANT : l'ensemble des logs provient exclusivement :
+    - des agents Wazuh (SSH, FIM, Odoo, nginx)
+    - des logs Azure NSG récupérés via le module azure-logs du manager Wazuh
+  
+  Plage d'ID réservée : 100000 - 100999
+-->
+
+<group name="erp_odoo,web,attack">
+
+  <!-- ============================================================ -->
+  <!-- ATTAQUE 1 : NETWORK RECONNAISSANCE (NMAP SCAN)                -->
+  <!-- Détection via logs Azure NSG : pic de connexions refusées     -->
+  <!-- ============================================================ -->
+  <rule id="100001" level="8" frequency="50" timeframe="60">
+    <if_matched_sid>60101</if_matched_sid>
+    <same_source_ip />
+    <description>Azure NSG : pic de connexions refusées (possible scan de ports)</description>
+    <mitre>
+      <id>T1046</id>
+    </mitre>
+    <group>recon,port_scan,azure_nsg,</group>
+  </rule>
+
+  <!-- Scan web agressif (nombre élevé de 404 depuis une même IP) -->
+  <rule id="100002" level="8" frequency="20" timeframe="60">
+    <if_matched_sid>31101</if_matched_sid>
+    <same_source_ip />
+    <description>Web : scan agressif détecté (20 erreurs HTTP en 60s depuis la même IP)</description>
+    <mitre>
+      <id>T1595</id>
+    </mitre>
+    <group>recon,web_scanning,</group>
+  </rule>
+
+  <!-- ============================================================ -->
+  <!-- ATTAQUE 2 : SSH BRUTE-FORCE                                   -->
+  <!-- Détection via agent Wazuh sur auth.log                        -->
+  <!-- ============================================================ -->
+  <rule id="100005" level="10" frequency="5" timeframe="60">
+    <if_matched_sid>5710</if_matched_sid>
+    <same_source_ip />
+    <description>SSH : brute force détecté (5 échecs d'authentification en 60s)</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1021.004</id>
+    </mitre>
+    <group>authentication_failures,brute_force,ssh,</group>
+  </rule>
+
+  <!-- Élévation : 10 échecs SSH depuis la même IP -->
+  <rule id="100006" level="12" frequency="10" timeframe="120">
+    <if_matched_sid>100005</if_matched_sid>
+    <same_source_ip />
+    <description>SSH : attaque par force brute persistante (10+ échecs en 120s)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>brute_force,ssh,critical,</group>
+  </rule>
+
+  <!-- ============================================================ -->
+  <!-- ATTAQUE 3 : MALWARE VIA PATH TRAVERSAL                        -->
+  <!-- Détection via FIM + logs web de l'agent Wazuh                 -->
+  <!-- ============================================================ -->
+  <rule id="100007" level="12">
+    <decoded_as>web-accesslog</decoded_as>
+    <url>\.\./|%2e%2e|\.\.%2f|%2e%2e%2f</url>
+    <description>Web : tentative de path traversal détectée</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1083</id>
+    </mitre>
+    <group>web_attack,path_traversal,</group>
+  </rule>
+
+  <!-- FIM : dépôt de fichier suspect après path traversal -->
+  <rule id="100008" level="14">
+    <if_sid>550</if_sid>
+    <field name="file">/var/www/odoo/.*\.(php|py|jsp|sh)$</field>
+    <description>FIM : dépôt de fichier exécutable suspect dans le répertoire Odoo</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>file_integrity,malware,</group>
+  </rule>
+
+  <!-- Corrélation : path traversal suivi d'écriture fichier -->
+  <rule id="100009" level="15">
+    <if_matched_sid>100007</if_matched_sid>
+    <if_matched_sid>100008</if_matched_sid>
+    <description>Chaîne d'attaque confirmée : path traversal + dépôt de malware</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1505</id>
+    </mitre>
+    <group>correlation,attack_chain,critical,</group>
+  </rule>
+
+  <!-- ============================================================ -->
+  <!-- ATTAQUE 4 : ODOO ERP (BRUTE FORCE + PATH TRAVERSAL)           -->
+  <!-- Détection via logs Odoo + nginx sur l'agent Wazuh             -->
+  <!-- ============================================================ -->
+  <rule id="100010" level="10" frequency="5" timeframe="60">
+    <if_matched_sid>31103</if_matched_sid>
+    <same_source_ip />
+    <url>/web/login</url>
+    <description>Odoo : brute force sur /web/login (5 échecs en 60s)</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1078.001</id>
+    </mitre>
+    <group>authentication_failures,brute_force,odoo,</group>
+  </rule>
+
+  <rule id="100011" level="12">
+    <decoded_as>odoo-access-log</decoded_as>
+    <status>^400$</status>
+    <url>/web/login</url>
+    <description>Odoo : requête POST /web/login rejetée (HTTP 400) — possible brute force</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>odoo,brute_force,</group>
+  </rule>
+
+  <!-- Corrélation : brute force Odoo + anomalies -->
+  <rule id="100012" level="14">
+    <if_matched_sid>100010</if_matched_sid>
+    <if_matched_sid>100002</if_matched_sid>
+    <description>Odoo : chaîne brute force + scan web — incident critique</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1595</id>
+    </mitre>
+    <group>correlation,odoo,critical,</group>
+  </rule>
+
+  <!-- ============================================================ -->
+  <!-- RÈGLE COMPOSITE : compromission multi-étapes                  -->
+  <!-- ============================================================ -->
+  <rule id="100020" level="15" frequency="1" timeframe="600">
+    <if_matched_sid>100002</if_matched_sid>
+    <if_matched_sid>100007</if_matched_sid>
+    <if_matched_sid>100010</if_matched_sid>
+    <description>SOC : chaîne d'attaque multi-étapes détectée sur l'ERP</description>
+    <mitre>
+      <id>T1595</id>
+      <id>T1190</id>
+      <id>T1110</id>
+    </mitre>
+    <group>correlation,apt,critical,</group>
+  </rule>
+
+</group>
