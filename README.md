@@ -57,8 +57,7 @@ En raison de contraintes de ressources, le prototype a été déployé sur **une
 - **Réponse automatisée :** Playbooks Shuffle pour le blocage d'IP via l'API Azure et l'enrichissement VirusTotal.
 - **Rapports intelligents :** Génération quotidienne de rapports PDF via LLM (Groq) avec classification des menaces et recommandations.
 - **MTTD < 3s et MTTR < 5s** (Mesuré sur le prototype).
-
-## 📂 Contenu du dépôt
+  
 ## 📂 Structure du dépôt
 
 ```text
