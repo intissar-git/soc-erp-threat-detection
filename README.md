@@ -47,7 +47,7 @@ L'architecture repose sur une approche **Defense-in-Depth** :
 ## 💻 Contraintes techniques du prototype
 En raison de contraintes de ressources, le prototype a été déployé sur **une seule machine virtuelle Azure** :
 - **RAM :** 16 Go
-- **Disque :** 256 Go
+- **Disque :** 64 Go
 - **Déploiement :** Conteneurs Docker (Shuffle, Cortex, TheHive, ELK, ERP Odoo + agent).
 
 **Note pour la production :** Pour un déploiement à grande échelle chez GM-Soft, cette architecture sera migrée vers des ressources dédiées (ou un cluster Kubernetes/AKS) afin de garantir la haute disponibilité et les performances nécessaires à la surveillance des solutions ERP de l'entreprise.
@@ -59,10 +59,43 @@ En raison de contraintes de ressources, le prototype a été déployé sur **une
 - **MTTD < 3s et MTTR < 5s** (Mesuré sur le prototype).
 
 ## 📂 Contenu du dépôt
-- `Docs/` : Rapport PFE (version publique nettoyée), guide de déploiement, schémas.
-- `Scripts/` : Scripts Python génériques (MISP-to-Wazuh, OpenSearch Anomaly, LLM Report).
-- `Config/` : Règles Wazuh XML, workflow Shuffle (JSON).
-- `Docker/` : Fichier `docker-compose.yml` simplifié pour le POC.
+## 📂 Structure du dépôt
+
+```text
+soc-erp-threat-detection/
+├── README.md                    # Ce fichier
+├── LICENSE                      # Licence CC BY-NC-ND 4.0
+├── .gitignore                   # Fichiers exclus du versioning
+├── .env.example                 # Modèle de configuration (à copier vers .env)
+│
+├── Docs/                        # Documentation
+│   ├── Soc_Architecture.jpg     # Schéma d'architecture
+│   ├── flux-donnees.md          # Description détaillée des flux
+│   └── rapport_pfe.pdf          # Rapport PFE (version publique nettoyée)
+│
+├── Config/                      # Fichiers de configuration
+│   ├── wazuh_rules.xml          # Règles Wazuh personnalisées (MITRE ATT&CK)
+│   ├── wazuh_decoders.xml       # Décodeurs personnalisés
+│   ├── ossec_agent_odoo.conf    # Configuration de l'agent Wazuh (Odoo)
+│   ├── thehive_application.conf # Configuration TheHive
+│   ├── cortex_application.conf  # Configuration Cortex
+│   ├── elasticsearch.yml        # Configuration Elasticsearch (ELK secondaire)
+│   ├── logstash.conf            # Pipeline Logstash
+│   ├── kibana.yml               # Configuration Kibana
+│   └── shuffle_workflow.json    # Workflow SOAR (export)
+│
+├── Scripts/                     # Scripts Python
+│   ├── misp_to_wazuh.py         # Synchronisation MISP → Wazuh
+│   ├── opensearch_anomaly.py    # Configuration du détecteur d'anomalies
+│   └── llm_report_generator.py  # Génération de rapports via LLM (Groq)
+│
+├── Docker/                      # Déploiement conteneurisé
+│   └── docker-compose.yml       # Stack SOC complète (Wazuh, Shuffle, MISP, etc.)
+│
+└── Terraform/                   # Infrastructure as Code
+    ├── main.tf                  # Définition de la VM Azure + NSG
+    ├── variables.tf             # Variables (region, taille VM, etc.)
+    └── outputs.tf               # IP publique, nom VM, commande SSH
 
 ## 🙏 Remerciements
 En reconnaissance des communautés open source et de leur contribution à la concrétisation de ce projet, nous avons décidé de rendre publiques notre documentation ainsi que les étapes suivies pour le réaliser. Nous remercions particulièrement les équipes de Wazuh, Elastic, Shuffle, TheHive, Cortex, MISP et OpenSearch.
