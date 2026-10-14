@@ -94,5 +94,6 @@ soc-erp-threat-detection/
     ├── variables.tf             # Variables (region, taille VM, etc.)
     └── outputs.tf               # IP publique, nom VM, commande SSH
 
+
 ## 🙏 Remerciements
 En reconnaissance des communautés open source et de leur contribution à la concrétisation de ce projet, nous avons décidé de rendre publiques notre documentation ainsi que les étapes suivies pour le réaliser. Nous remercions particulièrement les équipes de Wazuh, Elastic, Shuffle, TheHive, Cortex, MISP et OpenSearch.
