@@ -25,5 +25,5 @@ variable "vm_size" {
 variable "disk_size_gb" {
   description = "Taille du disque OS en Go"
   type        = number
-  default     = 256
+  default     = 64 Go
 }
